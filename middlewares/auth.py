@@ -19,12 +19,8 @@ class AuthMiddleware(BaseMiddleware):
         """Проверка доступа пользователя"""
         
         user_id = event.from_user.id
-        
-        if not self.admin_ids or user_id not in self.admin_ids:
-            if isinstance(event, Message):
-                await event.answer("❌ У вас нет доступа к этому боту")
-            elif isinstance(event, CallbackQuery):
-                await event.answer("❌ У вас нет доступа к этому боту", show_alert=True)
-            return
-        
+        is_admin = bool(self.admin_ids and user_id in self.admin_ids)
+        data["is_admin"] = is_admin
+        data["user_id"] = user_id
+        # обычным пользователям не отправляем сообщения об отказе — ограничим права в обработчиках
         return await handler(event, data)

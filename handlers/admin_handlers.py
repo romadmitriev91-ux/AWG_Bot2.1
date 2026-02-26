@@ -62,6 +62,9 @@ class SettingsStates(StatesGroup):
 @admin_router.callback_query(F.data == "settings_menu")
 async def show_settings_menu(callback: CallbackQuery):
     """Показать меню параметров"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     await edit_or_send_message(
         callback,
         "⚙️ Параметры бота\n\n"
@@ -73,6 +76,9 @@ async def show_settings_menu(callback: CallbackQuery):
 @admin_router.callback_query(F.data == "settings_show")
 async def show_settings_info(callback: CallbackQuery):
     """Показать текущие настройки"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     dns = await settings_service.get_default_dns()
     endpoint = await settings_service.get_default_endpoint()
     
@@ -90,6 +96,9 @@ async def show_settings_info(callback: CallbackQuery):
 @admin_router.callback_query(F.data == "settings_dns")
 async def start_dns_setup(callback: CallbackQuery, state: FSMContext):
     """Начать настройку DNS"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     current_dns = await settings_service.get_default_dns()
     
     await edit_or_send_message(
@@ -108,6 +117,9 @@ async def start_dns_setup(callback: CallbackQuery, state: FSMContext):
 @admin_router.message(StateFilter(SettingsStates.waiting_dns))
 async def process_dns_setup(message: Message, state: FSMContext):
     """Обработка настройки DNS"""
+    if message.from_user.id not in config.admin_ids:
+        # обычный пользователь не должен попадать сюда, но защитимся
+        return
     dns_servers = message.text.strip()
     user_id = message.from_user.id
     
@@ -152,6 +164,9 @@ async def process_dns_setup(message: Message, state: FSMContext):
 @admin_router.callback_query(F.data == "settings_endpoint")
 async def show_endpoint_settings(callback: CallbackQuery):
     """Показать настройки endpoint"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     current_endpoint = await settings_service.get_default_endpoint()
     endpoint_text = current_endpoint if current_endpoint else "Не установлен"
     
@@ -168,6 +183,9 @@ async def show_endpoint_settings(callback: CallbackQuery):
 @admin_router.callback_query(F.data == "set_default_endpoint")
 async def start_endpoint_setup(callback: CallbackQuery, state: FSMContext):
     """Начать настройку endpoint по умолчанию"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     current_endpoint = await settings_service.get_default_endpoint()
     
     endpoint_text = current_endpoint if current_endpoint else "не установлен"
@@ -190,6 +208,8 @@ async def start_endpoint_setup(callback: CallbackQuery, state: FSMContext):
 @admin_router.message(StateFilter(SettingsStates.waiting_endpoint))
 async def process_endpoint_setup(message: Message, state: FSMContext):
     """Обработка настройки endpoint"""
+    if message.from_user.id not in config.admin_ids:
+        return
     endpoint = message.text.strip()
     user_id = message.from_user.id
     
@@ -236,6 +256,9 @@ async def process_endpoint_setup(message: Message, state: FSMContext):
 @admin_router.callback_query(F.data == "clear_default_endpoint")
 async def clear_endpoint_confirm(callback: CallbackQuery):
     """Подтверждение очистки endpoint по умолчанию"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     current_endpoint = await settings_service.get_default_endpoint()
     
     if not current_endpoint:
@@ -269,6 +292,9 @@ async def clear_endpoint_confirm(callback: CallbackQuery):
 @admin_router.callback_query(F.data == "confirm_clear_endpoint")
 async def confirm_clear_endpoint(callback: CallbackQuery):
     """Подтвердить очистку endpoint"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     success = await settings_service.set_default_endpoint("")
     
     if success:
@@ -391,23 +417,24 @@ async def edit_or_send_photo(callback: CallbackQuery, photo, caption: str = ""):
 async def cmd_start(message: Message):
     """Обработчик команды /start"""
     user_last_message[message.from_user.id] = message.message_id
-    
+    is_admin = message.from_user.id in config.admin_ids
     await message.answer(
         "🤖 AmneziaWG Management Bot\n\n"
         "Добро пожаловать в бота для управления AmneziaWG сервером!\n"
         "Выберите действие из меню ниже:",
-        reply_markup=get_main_menu()
+        reply_markup=get_main_menu(is_admin)
     )
 
 # Главное меню
 @admin_router.callback_query(F.data == "main_menu")
 async def show_main_menu(callback: CallbackQuery):
     """Показать главное меню"""
+    is_admin = callback.from_user.id in config.admin_ids
     await edit_or_send_message(
         callback,
         "🤖 AmneziaWG Management Bot\n\n"
         "Выберите действие из меню ниже:",
-        reply_markup=get_main_menu()
+        reply_markup=get_main_menu(is_admin)
     )
     await callback.answer()
 
@@ -415,7 +442,12 @@ async def show_main_menu(callback: CallbackQuery):
 @admin_router.callback_query(F.data == "clients_menu")
 async def show_clients_menu(callback: CallbackQuery):
     """Показать меню управления клиентами"""
-    clients = await db.get_all_clients()
+    user_id = callback.from_user.id
+    is_admin = user_id in config.admin_ids
+    if is_admin:
+        clients = await db.get_all_clients()
+    else:
+        clients = await db.get_all_clients(owner_id=user_id)
     active_count = len([c for c in clients if c.is_active and not c.is_blocked])
     blocked_count = len([c for c in clients if c.is_blocked])
     
@@ -433,9 +465,38 @@ async def show_clients_menu(callback: CallbackQuery):
 @admin_router.callback_query(F.data == "add_client")
 async def start_add_client(callback: CallbackQuery, state: FSMContext):
     """Начать процесс добавления клиента"""
+    user_id = callback.from_user.id
+    is_admin = user_id in config.admin_ids
     # Проверяем есть ли endpoint по умолчанию
     default_endpoint = await settings_service.get_default_endpoint()
     
+    if not is_admin:
+        # у обычных пользователей endpoint может быть только из настроек
+        if not default_endpoint:
+            await edit_or_send_message(
+                callback,
+                "❌ Для создания ключа администратор должен сначала установить endpoint.\n\n"
+                "Обратитесь к администратору.",
+                reply_markup=get_main_menu(is_admin)
+            )
+            await callback.answer()
+            return
+        # сохраним endpoint из настроек и начнем ввод имени
+        await state.update_data(endpoint=default_endpoint)
+        await edit_or_send_message(
+            callback,
+            f"➕ Добавление нового клиента\n\n"
+            f"📡 Endpoint (задан администратором): {default_endpoint}\n\n"
+            f"Введите имя клиента:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔙 Отмена", callback_data="clients_menu")
+            ]])
+        )
+        await state.set_state(ClientStates.waiting_name)
+        await callback.answer()
+        return
+    
+    # далее обычная логика для администраторов
     if default_endpoint:
         # Если есть endpoint по умолчанию, сохраняем его и переходим к выбору времени
         await state.update_data(endpoint=default_endpoint)
@@ -883,7 +944,8 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
             expires_at=expires_at,
             traffic_limit=traffic_limit,
             is_active=True,
-            is_blocked=False
+            is_blocked=False,
+            owner_id=callback.from_user.id
         )
         
         # Сохраняем в базу
@@ -908,7 +970,7 @@ async def process_traffic_limit(callback: CallbackQuery, state: FSMContext):
                 f"⏱ Срок действия: {expires_text}\n"
                 f"📊 Трафик: {traffic_text}\n\n"
                 f"✅ Клиент добавлен на сервер.",
-                reply_markup=get_client_details_keyboard(client.id)
+                reply_markup=get_client_details_keyboard(client.id, is_admin=(callback.from_user.id in config.admin_ids))
             )
 
         else:
@@ -952,7 +1014,12 @@ async def show_clients_list(callback: CallbackQuery):
     if callback.data.startswith("clients_page:"):
         page = int(callback.data.split(":", 1)[1])
 
-    clients = await db.get_all_clients()
+    user_id = callback.from_user.id
+    is_admin = user_id in config.admin_ids
+    if is_admin:
+        clients = await db.get_all_clients()
+    else:
+        clients = await db.get_all_clients(owner_id=user_id)
     if not clients:
         await edit_or_send_message(
             callback,
@@ -1000,6 +1067,11 @@ async def show_client_details(callback: CallbackQuery):
         )
         await callback.answer()
         return
+    # проверка прав: только админ или владелец может просматривать
+    user_id = callback.from_user.id
+    if user_id not in config.admin_ids and client.owner_id != user_id:
+        await callback.answer("❌ У вас нет доступа к этому клиенту", show_alert=True)
+        return
     
     # Получаем статистику
     stats = await awg_manager.get_interface_stats()
@@ -1014,6 +1086,7 @@ async def show_client_details(callback: CallbackQuery):
     info_text = format_client_info(client, client_stats)
     
     user_id = callback.from_user.id
+    is_admin = user_id in config.admin_ids
     
     # Если предыдущее сообщение было с фото (QR-код), удаляем его и отправляем новое
     try:
@@ -1025,21 +1098,21 @@ async def show_client_details(callback: CallbackQuery):
             new_message = await callback.bot.send_message(
                 chat_id=user_id,
                 text=info_text,
-                reply_markup=get_client_details_keyboard(client_id)
+                reply_markup=get_client_details_keyboard(client_id, is_admin=is_admin)
             )
             user_last_message[user_id] = new_message.message_id
         else:
             await edit_or_send_message(
                 callback,
                 info_text,
-                reply_markup=get_client_details_keyboard(client_id)
+                reply_markup=get_client_details_keyboard(client_id, is_admin=is_admin)
             )
     except Exception as e:
         logger.error(f"Ошибка при обработке перехода от QR: {e}")
         new_message = await callback.bot.send_message(
             chat_id=user_id,
             text=info_text,
-            reply_markup=get_client_details_keyboard(client_id)
+            reply_markup=get_client_details_keyboard(client_id, is_admin=is_admin)
         )
         user_last_message[user_id] = new_message.message_id
     
@@ -1049,6 +1122,9 @@ async def show_client_details(callback: CallbackQuery):
 @admin_router.callback_query(F.data.startswith("edit_client:"))
 async def show_edit_client_menu(callback: CallbackQuery):
     """Показать меню редактирования клиента"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Только администратор может редактировать клиента", show_alert=True)
+        return
     client_id = int(callback.data.split(":", 1)[1])
     client = await db.get_client(client_id)
     
@@ -1068,6 +1144,10 @@ async def show_edit_client_menu(callback: CallbackQuery):
 @admin_router.callback_query(F.data.startswith("toggle_block:"))
 async def toggle_client_block(callback: CallbackQuery):
     """Заблокировать/разблокировать клиента"""
+    is_admin = callback.from_user.id in config.admin_ids
+    if not is_admin:
+        await callback.answer("❌ Только администратор может менять статус клиента", show_alert=True)
+        return
     client_id = int(callback.data.split(":", 1)[1])
     client = await db.get_client(client_id)
     
@@ -1099,7 +1179,7 @@ async def toggle_client_block(callback: CallbackQuery):
         await edit_or_send_message(
             callback,
             info_text,
-            reply_markup=get_client_details_keyboard(client_id)
+            reply_markup=get_client_details_keyboard(client_id, is_admin=is_admin)
         )
     else:
         await callback.answer(f"❌ Ошибка при изменении статуса клиента", show_alert=True)
@@ -1114,8 +1194,10 @@ async def send_client_config(callback: CallbackQuery):
     if not client:
         await callback.answer("❌ Клиент не найден", show_alert=True)
         return
-    
     user_id = callback.from_user.id
+    if user_id not in config.admin_ids and client.owner_id != user_id:
+        await callback.answer("❌ У вас нет доступа к этому клиенту", show_alert=True)
+        return
     
     try:
         from utils.vpn_converter import conf_to_vpn_url
@@ -1223,7 +1305,7 @@ async def back_from_config(callback: CallbackQuery):
     new_message = await callback.bot.send_message(
         chat_id=user_id,
         text=client_info,
-        reply_markup=get_client_details_keyboard(client.id),
+        reply_markup=get_client_details_keyboard(client.id, is_admin=(callback.from_user.id in config.admin_ids)),
         parse_mode="Markdown"
     )
     
@@ -1239,6 +1321,10 @@ async def send_client_qr(callback: CallbackQuery):
     
     if not client:
         await callback.answer("❌ Клиент не найден", show_alert=True)
+        return
+    user_id = callback.from_user.id
+    if user_id not in config.admin_ids and client.owner_id != user_id:
+        await callback.answer("❌ У вас нет доступа к этому клиенту", show_alert=True)
         return
     
     try:
@@ -1292,6 +1378,10 @@ async def show_client_ip_info(callback: CallbackQuery):
     
     if not client:
         await callback.answer("❌ Клиент не найден", show_alert=True)
+        return
+    user_id = callback.from_user.id
+    if user_id not in config.admin_ids and client.owner_id != user_id:
+        await callback.answer("❌ У вас нет доступа к этому клиенту", show_alert=True)
         return
     
     await callback.answer("🔍 Получаю информацию о соединениях...")
@@ -1377,6 +1467,10 @@ async def show_client_stats(callback: CallbackQuery):
     if not client:
         await callback.answer("❌ Клиент не найден", show_alert=True)
         return
+    user_id = callback.from_user.id
+    if user_id not in config.admin_ids and client.owner_id != user_id:
+        await callback.answer("❌ У вас нет доступа к статистике этого клиента", show_alert=True)
+        return
     
     stats = await awg_manager.get_interface_stats()
     client_stats = stats.get(client.public_key, {})
@@ -1410,6 +1504,9 @@ async def show_client_stats(callback: CallbackQuery):
 @admin_router.callback_query(F.data.startswith("delete_client:"))
 async def confirm_delete_client(callback: CallbackQuery):
     """Подтвердить удаление клиента"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Только администратор может удалять клиентов", show_alert=True)
+        return
     client_id = int(callback.data.split(":", 1)[1])
     client = await db.get_client(client_id)
     
@@ -1430,6 +1527,9 @@ async def confirm_delete_client(callback: CallbackQuery):
 @admin_router.callback_query(F.data.startswith("confirm:delete_client:"))
 async def delete_client_confirmed(callback: CallbackQuery):
     """Удалить клиента после подтверждения"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Только администратор может удалять клиентов", show_alert=True)
+        return
     client_id = int(callback.data.split(":", 2)[2])
     client = await db.get_client(client_id)
 
@@ -1554,6 +1654,9 @@ async def show_stats_menu(callback: CallbackQuery):
 @admin_router.callback_query(F.data == "backup_menu")
 async def show_backup_menu(callback: CallbackQuery):
     """Показать меню резервных копий"""
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     backups = await backup_service.list_backups()
     
     await edit_or_send_message(
@@ -1607,7 +1710,11 @@ async def process_search_client(message: Message, state: FSMContext):
                 pass
         return
     
-    all_clients = await db.get_all_clients()
+    user_id = message.from_user.id
+    if message.from_user.id in config.admin_ids:
+        all_clients = await db.get_all_clients()
+    else:
+        all_clients = await db.get_all_clients(owner_id=user_id)
     found_clients = [c for c in all_clients if search_term in c.name.lower()]
 
     await state.clear()
@@ -2262,6 +2369,9 @@ async def regenerate_client_keys(callback: CallbackQuery):
 # Создание резервной копии
 @admin_router.callback_query(F.data == "create_backup")
 async def create_backup(callback: CallbackQuery):
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     """Создание резервной копии"""
     await callback.answer("💾 Создаю резервную копию...")
     
@@ -2349,6 +2459,9 @@ async def show_backup_details(callback: CallbackQuery):
 # Восстановление резервной копии
 @admin_router.callback_query(F.data.startswith("restore_backup:"))
 async def restore_backup_confirm(callback: CallbackQuery):
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     """Подтверждение восстановления резервной копии"""
     backup_filename = callback.data.split(":", 1)[1]
     
@@ -2372,6 +2485,9 @@ async def restore_backup_confirm(callback: CallbackQuery):
 # Подтверждение восстановления
 @admin_router.callback_query(F.data.startswith("confirm_restore:"))
 async def confirm_restore_backup(callback: CallbackQuery):
+    if callback.from_user.id not in config.admin_ids:
+        await callback.answer("❌ Доступно только администратору", show_alert=True)
+        return
     """Выполнить восстановление резервной копии"""
     backup_filename = callback.data.split(":", 1)[1]
     

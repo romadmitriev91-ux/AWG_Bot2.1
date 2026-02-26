@@ -67,27 +67,38 @@ def get_activity_emoji(client: Client, client_stats: Optional[Dict] = None) -> s
     else:
         return "🟠"  # давно не подключался (более 14 дней)
 
-def get_main_menu() -> InlineKeyboardMarkup:
-    """Главное меню бота"""
+def get_main_menu(is_admin: bool = True) -> InlineKeyboardMarkup:
+    """Главное меню бота. Если пользователь не админ, показываются только базовые опции"""
     builder = InlineKeyboardBuilder()
-    
-    builder.add(InlineKeyboardButton(
-        text="👥 Управление клиентами",
-        callback_data="clients_menu"
-    ))
-    builder.add(InlineKeyboardButton(
-        text="📊 Статистика",
-        callback_data="stats_menu"
-    ))
-    builder.add(InlineKeyboardButton(
-        text="💾 Резервные копии",
-        callback_data="backup_menu"
-    ))
-    builder.add(InlineKeyboardButton(
-        text="⚙️ Параметры",
-        callback_data="settings_menu"
-    ))
-    
+
+    if is_admin:
+        builder.add(InlineKeyboardButton(
+            text="👥 Управление клиентами",
+            callback_data="clients_menu"
+        ))
+        builder.add(InlineKeyboardButton(
+            text="📊 Статистика",
+            callback_data="stats_menu"
+        ))
+        builder.add(InlineKeyboardButton(
+            text="💾 Резервные копии",
+            callback_data="backup_menu"
+        ))
+        builder.add(InlineKeyboardButton(
+            text="⚙️ Параметры",
+            callback_data="settings_menu"
+        ))
+    else:
+        # обычный пользователь: может создать ключ и посмотреть свои
+        builder.add(InlineKeyboardButton(
+            text="➕ Создать ключ",
+            callback_data="add_client"
+        ))
+        builder.add(InlineKeyboardButton(
+            text="📋 Мои ключи",
+            callback_data="list_clients"
+        ))
+
     builder.adjust(1)
     return builder.as_markup()
 
@@ -228,17 +239,22 @@ def get_client_list_keyboard(
     builder.adjust(1)
     return builder.as_markup()
 
-def get_client_details_keyboard(client_id: int) -> InlineKeyboardMarkup:
-    """Клавиатура с действиями над клиентом"""
+def get_client_details_keyboard(client_id: int, is_admin: bool = True) -> InlineKeyboardMarkup:
+    """Клавиатура с действиями над клиентом
+
+    Обычным пользователям доступны только просмотр конфигурации/QR и статистика.
+    """
     builder = InlineKeyboardBuilder()
-    builder.add(InlineKeyboardButton(
-        text="📝 Редактировать",
-        callback_data=f"edit_client:{client_id}"
-    ))
-    builder.add(InlineKeyboardButton(
-        text="🔒 Заблокировать/Разблокировать",
-        callback_data=f"toggle_block:{client_id}"
-    ))
+    if is_admin:
+        builder.add(InlineKeyboardButton(
+            text="📝 Редактировать",
+            callback_data=f"edit_client:{client_id}"
+        ))
+        builder.add(InlineKeyboardButton(
+            text="🔒 Заблокировать/Разблокировать",
+            callback_data=f"toggle_block:{client_id}"
+        ))
+    # все пользователи могут видеть статистику, qr и конфиг
     builder.add(InlineKeyboardButton(
         text="📊 Статистика",
         callback_data=f"client_stats:{client_id}"
@@ -255,10 +271,11 @@ def get_client_details_keyboard(client_id: int) -> InlineKeyboardMarkup:
         text="🌍 IP Соединения",
         callback_data=f"client_ip_info:{client_id}"
     ))
-    builder.add(InlineKeyboardButton(
-        text="🗑️ Удалить",
-        callback_data=f"delete_client:{client_id}"
-    ))
+    if is_admin:
+        builder.add(InlineKeyboardButton(
+            text="🗑️ Удалить",
+            callback_data=f"delete_client:{client_id}"
+        ))
     builder.add(InlineKeyboardButton(
         text="🔙 Список клиентов",
         callback_data="list_clients"

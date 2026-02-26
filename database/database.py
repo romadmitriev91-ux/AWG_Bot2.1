@@ -25,6 +25,7 @@ class Client:
     is_blocked: bool = False
     last_ip: str = ""
     daily_ips: str = ""
+    owner_id: Optional[int] = None  # Telegram user ID who created this key
 
 @dataclass
 class BotSettings:
@@ -150,7 +151,8 @@ class Database:
                     is_active BOOLEAN DEFAULT 1,
                     is_blocked BOOLEAN DEFAULT 0,
                     last_ip TEXT DEFAULT '',
-                    daily_ips TEXT DEFAULT ''
+                    daily_ips TEXT DEFAULT '',
+                    owner_id INTEGER DEFAULT NULL
                 )
             """)
 
@@ -160,6 +162,16 @@ class Database:
             await db.execute("CREATE INDEX IF NOT EXISTS idx_clients_is_active ON clients(is_active)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_clients_is_blocked ON clients(is_blocked)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_clients_expires_at ON clients(expires_at)")
+            # индекс по владельцу для быстрого фильтра
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_clients_owner_id ON clients(owner_id)")
+            # если база ранее не содержала столбца owner_id, добавляем его
+            info_cursor = await db.execute("PRAGMA table_info(clients)")
+            cols = [row["name"] for row in await info_cursor.fetchall()]
+            if "owner_id" not in cols:
+                try:
+                    await db.execute("ALTER TABLE clients ADD COLUMN owner_id INTEGER DEFAULT NULL")
+                except Exception:
+                    pass
 
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS client_ip_connections (
@@ -256,14 +268,14 @@ class Database:
             cursor = await db.execute("""
                 INSERT INTO clients (name, public_key, private_key, preshared_key, ip_address,
                                    ipv6_address, has_ipv6, endpoint, expires_at, traffic_limit,
-                                   is_active, is_blocked, last_ip, daily_ips)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   is_active, is_blocked, last_ip, daily_ips, owner_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 client.name, client.public_key, client.private_key,
                 client.preshared_key, client.ip_address, client.ipv6_address,
                 client.has_ipv6, client.endpoint, client.expires_at,
                 client.traffic_limit, client.is_active, client.is_blocked,
-                client.last_ip, client.daily_ips
+                client.last_ip, client.daily_ips, client.owner_id
             ))
             await db.commit()
             return cursor.lastrowid
@@ -278,14 +290,14 @@ class Database:
                     cursor = await db.execute("""
                         INSERT INTO clients (name, public_key, private_key, preshared_key, ip_address,
                                            ipv6_address, has_ipv6, endpoint, expires_at, traffic_limit,
-                                           is_active, is_blocked, last_ip, daily_ips)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                           is_active, is_blocked, last_ip, daily_ips, owner_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         client.name, client.public_key, client.private_key,
                         client.preshared_key, client.ip_address, client.ipv6_address,
                         client.has_ipv6, client.endpoint, client.expires_at,
                         client.traffic_limit, client.is_active, client.is_blocked,
-                        client.last_ip, client.daily_ips
+                        client.last_ip, client.daily_ips, client.owner_id
                     ))
                     client_ids.append(cursor.lastrowid)
                 await db.commit()
@@ -322,20 +334,35 @@ class Database:
                 return self._row_to_client(row)
             return None
 
-    async def get_all_clients(self) -> List[Client]:
-        """Получение всех клиентов"""
+    async def get_all_clients(self, owner_id: Optional[int] = None) -> List[Client]:
+        """Получение всех клиентов
+
+        Если owner_id указан, возвращаются только клиенты, созданные этим пользователем.
+        """
         async with self.pool.acquire() as db:
-            cursor = await db.execute("SELECT * FROM clients ORDER BY name COLLATE NOCASE ASC")
+            if owner_id is not None:
+                cursor = await db.execute(
+                    "SELECT * FROM clients WHERE owner_id = ? ORDER BY name COLLATE NOCASE ASC",
+                    (owner_id,)
+                )
+            else:
+                cursor = await db.execute("SELECT * FROM clients ORDER BY name COLLATE NOCASE ASC")
             rows = await cursor.fetchall()
             return [self._row_to_client(row) for row in rows]
 
-    async def get_clients_paginated(self, offset: int = 0, limit: int = 10) -> List[Client]:
+    async def get_clients_paginated(self, offset: int = 0, limit: int = 10, owner_id: Optional[int] = None) -> List[Client]:
         """Получение клиентов с пагинацией для больших выборок"""
         async with self.pool.acquire() as db:
-            cursor = await db.execute(
-                "SELECT * FROM clients ORDER BY name COLLATE NOCASE ASC LIMIT ? OFFSET ?",
-                (limit, offset)
-            )
+            if owner_id is not None:
+                cursor = await db.execute(
+                    "SELECT * FROM clients WHERE owner_id = ? ORDER BY name COLLATE NOCASE ASC LIMIT ? OFFSET ?",
+                    (owner_id, limit, offset)
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT * FROM clients ORDER BY name COLLATE NOCASE ASC LIMIT ? OFFSET ?",
+                    (limit, offset)
+                )
             rows = await cursor.fetchall()
             return [self._row_to_client(row) for row in rows]
 

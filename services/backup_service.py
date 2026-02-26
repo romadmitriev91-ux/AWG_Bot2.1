@@ -54,19 +54,8 @@ class BackupService:
                     'traffic_limit': client.traffic_limit,
                     'traffic_used': client.traffic_used,
                     'is_active': client.is_active,
-                    'is_blocked': client.is_blocked
-                }
-                backup_data['clients'].append(client_data)
-            
-            with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                clients_json = json.dumps(backup_data, indent=2, ensure_ascii=False)
-                zipf.writestr('clients.json', clients_json)
-                
-                server_config_path = Path(self.config.awg_config_dir) / f"{self.config.awg_interface}.conf"
-                if server_config_path.exists():
-                    zipf.write(server_config_path, f"server_{self.config.awg_interface}.conf")
-                
-                if os.path.exists(self.config.database_path):
+                    'is_blocked': client.is_blocked,
+                    'owner_id': client.owner_id
                     zipf.write(self.config.database_path, 'database.db')
             
             self.logger.info(f"Резервная копия создана: {backup_filename}")
@@ -131,7 +120,8 @@ class BackupService:
                         traffic_limit=client_data['traffic_limit'],
                         traffic_used=client_data['traffic_used'],
                         is_active=client_data['is_active'],
-                        is_blocked=client_data['is_blocked']
+                        is_blocked=client_data['is_blocked'],
+                        owner_id=client_data.get('owner_id')
                     )
                     await db.add_client(client)
             
